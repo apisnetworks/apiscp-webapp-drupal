@@ -230,7 +230,7 @@
 				['app' => static::APP_NAME, 'email' => $opts['email']]);
 		}
 
-		private function _exec($path = null, $cmd, array $args = array())
+		private function _exec(?string $path, $cmd, array $args = array())
 		{
 			// client may override tz, propagate to bin
 			$tz = date_default_timezone_get();
@@ -384,7 +384,7 @@
 			return true;
 		}
 
-		public function enable_plugin($hostname, $path = '', $plugin)
+		public function enable_plugin(string $hostname, ?string $path, $plugin)
 		{
 			$docroot = $this->getAppRoot($hostname, $path);
 			if (!$docroot) {
@@ -435,13 +435,13 @@
 			return true;
 		}
 
-		public function plugin_active($hostname, $path = '', $plugin)
+		public function plugin_active(string $hostname, ?string $path, $plugin)
 		{
-			$docroot = $this->getAppRoot($hostname, $path);
+			$docroot = $this->getAppRoot($hostname, (string)$path);
 			if (!$docroot) {
 				return error('invalid Drupal location');
 			}
-			$plugin = $this->plugin_status($hostname, $path, $plugin);
+			$plugin = $this->plugin_status($hostname, (string)$path, $plugin);
 
 			return $plugin['status'] === 'enabled';
 		}
@@ -467,12 +467,12 @@
 				];
 			}
 
-			return $plugin ? $array_pop($plugins) : $plugins;
+			return $plugin ? array_pop($plugins) : $plugins;
 		}
 
-		public function disable_plugin($hostname, $path = '', $plugin)
+		public function disable_plugin($hostname, ?string $path, $plugin)
 		{
-			$docroot = $this->getAppRoot($hostname, $path);
+			$docroot = $this->getAppRoot($hostname, (string)$path);
 			if (!$docroot) {
 				return error('invalid Drupal location');
 			}
