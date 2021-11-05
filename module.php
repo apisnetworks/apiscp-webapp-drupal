@@ -12,6 +12,9 @@
 	 *  +------------------------------------------------------------+
 	 */
 
+	use Module\Support\Webapps\VersionFetcher\Github;
+	use Opcenter\Versioning;
+
 	/**
 	 * Drupal drush interface
 	 *
@@ -23,13 +26,18 @@
 
 		// primary domain document root
 		const DRUPAL_CLI = '/usr/share/pear/drupal.phar';
-		const DEFAULT_BRANCH = '8.x';
-		const DRUPAL_MAJORS = ['6.x', '7.x', '8.x'];
+		const DEFAULT_BRANCH = '9.x';
+		const DRUPAL_MAJORS = ['8.x', '9.x', '10.x'];
 		// latest release
-		const DRUPAL_CLI_URL = 'https://github.com/drush-ops/drush/releases/download/8.3.5/drush.phar';
+		const DRUPAL_CLI_URL = 'https://github.com/drush-ops/drush/releases/download/8.4.8/drush.phar';
 		const VERSION_CHECK_URL = 'https://updates.drupal.org/release-history';
 		const DEFAULT_VERSION_LOCK = 'major';
 
+		const DRUPAL_COMPATIBILITY = [
+			'8'  => '8.x',
+			'9'  => '8.4',
+			'10' => ''
+		];
 		protected $aclList = array(
 			'max' => array('sites/*/files')
 		);
@@ -574,59 +582,6 @@
 			return \Util_PHP::unserialize(trim($ret['stdout']));
 		}
 
-		/**
-		 * Check if version is latest or get latest version
-		 *
-		 * @param null|string $version
-		 * @param string|null $branchcomp
-		 * @return int|string
-		 */
-		public function is_current(string $version = null, string $branchcomp = null)
-		{
-			$vermask = $version ? substr($version, 0, strpos($version, '.')) : null;
-			$latest = $this->_getLastestVersion($vermask);
-			if (!$version) {
-				return $latest;
-			}
-			if (version_compare((string)$version, (string)$latest, '=')) {
-				return 1;
-			}
-			if (version_compare((string)$version, (string)$latest, '<')) {
-				return 0;
-			}
-
-			return -1;
-		}
-
-		/**
-		 * Get latest Drupal release
-		 *
-		 * @param null $version
-		 * @return null|string
-		 */
-		private function _getLastestVersion($version = null): ?string
-		{
-			if (!$version) {
-				$version = self::DEFAULT_BRANCH;
-			}
-			$version = $this->_extractBranch($version);
-			$versions = $this->_getVersions('drupal', $version);
-
-			if (!$versions) {
-				return null;
-			}
-			$releases = $versions['releases']['release'];
-			for ($i = 0, $n = count($releases); $i < $n; $i++) {
-				// dev, alpha, etc
-				if (!isset($releases[$i]['version_extra'])) {
-					return $releases[$i]['version'];
-				}
-			}
-
-			// can't find a suitable release, return the first one
-			return $releases[0]['version'];
-		}
-
 		private function _extractBranch($version)
 		{
 			if (substr($version, -2) === '.x') {
@@ -645,32 +600,17 @@
 		/**
 		 * Get all current major versions
 		 *
-		 * @param string $module
-		 * @param string $version
 		 * @return array
 		 */
-		private function _getVersions($module = 'drupal', $version = self::DEFAULT_BRANCH): array
+		private function _getVersions(): array
 		{
-			$version = $this->_extractBranch($version);
-			$key = 'drupal.versions:' . $module;
-
+			$key = 'drupal.versions';
 			$cache = Cache_Super_Global::spawn();
-			if (false !== ($ver = $cache->get($key)) && isset($ver[$version])) {
-				return $ver[$version];
+			if (0 && false !== ($ver = $cache->get($key))) {
+				return (array)$ver;
 			}
-			$url = self::VERSION_CHECK_URL;
-			$url .= '/' . $module . '/' . $version;
-			$contents = file_get_contents($url);
-
-			if (!$contents) {
-				return array();
-			}
-			if (!is_array($ver)) {
-				$ver = array();
-			}
-
-			$versions = json_decode(json_encode(simplexml_load_string($contents)), true);
-			$ver[$version] = $versions;
+			// 8.7.11+
+			$versions = (new Github)->setMode('tags')->fetch('drupal/drupal');
 			$cache->set($key, $versions, 43200);
 
 			return $versions;
@@ -783,7 +723,10 @@
 				$current = $this->_extractBranch($version);
 			} else {
 				$current = $this->_extractBranch($this->get_version($hostname, $path));
-				$version = $this->_getLastestVersion($current);
+				$version = Versioning::nextVersion(
+					$this->get_versions(),
+					$this->get_version($hostname, $path)
+				);
 			}
 
 			// save .htaccess
@@ -928,29 +871,15 @@
 		}
 
 		/**
-		 * Get all available stable versions
+		 * Get all available Drupal  versions
 		 *
 		 * @return array
 		 */
 		public function get_versions(): array
 		{
-			$key = 'drupal.verflat';
-			$cache = \Cache_Global::spawn();
-			if (false !== ($versions = $cache->get($key))) {
-				return $versions;
-			}
-			$tmp = [];
-			foreach (array_reverse(self::DRUPAL_MAJORS) as $branch) {
-				$branchversions = $this->_getVersions('drupal', $branch);
-				$tmp = array_merge_recursive($tmp, $branchversions);
-			}
+			$versions = $this->_getVersions();
 
-			$versions = array_column(array_filter(array_reverse(array_get($tmp, 'releases.release')), static function ($v) {
-				return empty($v['version_extra']) && $v['status'] === 'published';
-			}), 'version');
-			$cache->set($key, $versions, 86400);
-
-			return $versions;
+			return array_column($versions, 'version');
 		}
 
 		/**
