@@ -26,11 +26,9 @@
 
 		// primary domain document root
 		const DRUPAL_CLI = '/usr/share/pear/drupal.phar';
-		const DEFAULT_BRANCH = '9.x';
-		const DRUPAL_MAJORS = ['8.x', '9.x', '10.x'];
+
 		// latest release
 		const DRUPAL_CLI_URL = 'https://github.com/drush-ops/drush/releases/download/8.4.8/drush.phar';
-		const VERSION_CHECK_URL = 'https://updates.drupal.org/release-history';
 		const DEFAULT_VERSION_LOCK = 'major';
 
 		const DRUPAL_COMPATIBILITY = [
@@ -62,6 +60,9 @@
 		 */
 		public function install(string $hostname, string $path = '', array $opts = array()): bool
 		{
+			if (isset($opts['version']) && version_compare((string)$opts['version'], '7.33', '<')) {
+				return error("Minimum %(app)s version is %(version)s", ['app' => self::APP_NAME, 'version' => '7.33']);
+			}
 			if (!$this->mysql_enabled()) {
 				return error('%(what)s must be enabled to install %(app)s',
 					['what' => 'MySQL', 'app' => static::APP_NAME]);
@@ -85,7 +86,7 @@
 				$opts['profile'] = 'standard';
 				$opts['dist'] = 'drupal';
 				if (isset($opts['version'])) {
-					if (strcspn($opts['version'], '.0123456789x')) {
+					if (strcspn((string)$opts['version'], '.0123456789x')) {
 						return error('invalid version number, %s', $opts['version']);
 					}
 					$opts['dist'] .= '-' . $opts['version'];
@@ -158,7 +159,7 @@
 			}
 
 			$proto = 'mysql';
-			if (!empty($opts['version']) && version_compare($opts['version'], '7.0', '<')) {
+			if (!empty($opts['version']) && version_compare((string)$opts['version'], '7.0', '<')) {
 				$proto = 'mysqli';
 			}
 			$dburi = $proto . '://' . $db->username . ':' .
@@ -606,7 +607,7 @@
 		{
 			$key = 'drupal.versions';
 			$cache = Cache_Super_Global::spawn();
-			if (0 && false !== ($ver = $cache->get($key))) {
+			if (false !== ($ver = $cache->get($key))) {
 				return (array)$ver;
 			}
 			// 8.7.11+
