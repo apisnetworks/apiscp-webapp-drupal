@@ -754,7 +754,7 @@
 				'version' => $this->get_version($hostname, $path) ?? $version,
 				'failed'  => !$ret['success']
 			]);
-			$this->fortify($hostname, $path, array_get($this->getOptions($docroot), 'fortify', 'max'));
+			$this->fortify($hostname, $path, array_get($this->getOptions($docroot), 'fortify') ?: 'max');
 
 			if (!$ret['success']) {
 				return error('failed to update Drupal: %s', coalesce($ret['stderr'], $ret['stdout']));
