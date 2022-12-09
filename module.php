@@ -28,7 +28,7 @@
 		const DRUPAL_CLI = '/usr/share/pear/drupal.phar';
 
 		// latest release
-		const DRUPAL_CLI_URL = 'https://github.com/drush-ops/drush/releases/download/8.4.8/drush.phar';
+		const DRUPAL_CLI_URL = 'https://github.com/drush-ops/drush/releases/download/8.4.11/drush.phar';
 		const DEFAULT_VERSION_LOCK = 'major';
 
 		const DRUPAL_COMPATIBILITY = [
