@@ -12,6 +12,9 @@
 	 *  +------------------------------------------------------------+
 	 */
 
+	use Module\Support\Webapps\ComposerWrapper;
+	use Module\Support\Webapps\PhpWrapper;
+	use Module\Support\Webapps\Traits\PublicRelocatable;
 	use Module\Support\Webapps\VersionFetcher\Github;
 	use Opcenter\Versioning;
 
@@ -22,19 +25,21 @@
 	 */
 	class Drupal_Module extends \Module\Support\Webapps
 	{
+		use PublicRelocatable {
+			getAppRoot as getAppRootReal;
+		}
+
 		const APP_NAME = 'Drupal';
 
 		// primary domain document root
-		const DRUPAL_CLI = '/usr/share/pear/drupal.phar';
+		const DRUPAL_CLI = '/usr/share/pear/drush.phar';
 
-		// latest release
-		const DRUPAL_CLI_URL = 'https://github.com/drush-ops/drush/releases/download/8.4.11/drush.phar';
 		const DEFAULT_VERSION_LOCK = 'major';
 
 		const DRUPAL_COMPATIBILITY = [
 			'8'  => '8.x',
 			'9'  => '8.4',
-			'10' => ''
+			'10' => '11'
 		];
 		protected $aclList = array(
 			'max' => array('sites/*/files')
@@ -67,7 +72,7 @@
 				return error('%(what)s must be enabled to install %(app)s',
 					['what' => 'MySQL', 'app' => static::APP_NAME]);
 			}
-			$docroot = $this->getAppRoot($hostname, $path);
+			$docroot = $this->getDocumentRoot($hostname, $path);
 			if (!$docroot) {
 				return error('failed to install Drupal');
 			}
@@ -96,36 +101,67 @@
 				$opts['profile'] = $opts['dist'];
 			}
 
-			$cmd = 'dl %(dist)s';
+			if (version_compare((string)$opts['version'], '9.0.0', '>=')) {
+				$ret = serial(function () use ($docroot, $opts) {
+					$composer = ComposerWrapper::instantiateContexted(\Auth::context($this->getDocrootUser($docroot),
+						$this->site));
 
-			$tmpdir = '/tmp/drupal' . crc32((string)\Util_PHP::random_int());
-			$args = array(
-				'tempdir' => $tmpdir,
-				'path'    => $docroot,
-				'dist'    => $opts['dist']
-			);
-			/**
-			 * drupal expects destination dir to exist
-			 * move /tmp/<RANDOM NAME>/drupal to <DOCROOT> instead
-			 * of downloading to <DOCROOT>/drupal and moving everything down 1
-			 */
-			$this->file_create_directory($tmpdir);
-			$ret = $this->_exec('/tmp', $cmd . ' --drupal-project-rename --destination=%(tempdir)s -q', $args);
+					$ret = $composer->exec($docroot,
+						'create-project drupal/recommended-project:' . $opts['version'] . " .");
+					if (!$ret['success']) {
+						return $ret;
+					}
 
-			if (!$ret['success']) {
-				return error('failed to download Drupal - out of space? Error: `%s\'',
-					coalesce($ret['stderr'], $ret['stdout'])
+					return $composer->exec($docroot, 'require drush/drush');
+				});
+
+				if (!$ret['success']) {
+					return error("Failed to install %(app)s: %(err)s", [
+						'app' => static::APP_NAME,
+						'err' => coalesce($ret['stderr'], $ret['stdout'])
+					]);
+				}
+				if (null === ($docroot = $this->remapPublic($hostname, $path, 'web'))) {
+					// it's more reasonable to fail at this stage, but let's try to complete
+					return error("Failed to remap %(app)s to %(subdir)/, manually remap from `%(docroot)s' - %(app)s setup is incomplete!", [
+						'app' => static::APP_NAME,
+						'subdir' => 'web',
+						'docroot' => $this->getDocumentRoot($hostname, $path),
+					]);
+				}
+			} else {
+				$cmd = 'dl %(dist)s';
+
+				$tmpdir = '/tmp/drupal' . crc32((string)\Util_PHP::random_int());
+				$args = array(
+					'tempdir' => $tmpdir,
+					'path'    => $docroot,
+					'dist'    => $opts['dist']
 				);
-			}
-			if ($this->file_exists($docroot)) {
-				$this->file_delete($docroot, true);
-			}
+				/**
+				 * drupal expects destination dir to exist
+				 * move /tmp/<RANDOM NAME>/drupal to <DOCROOT> instead
+				 * of downloading to <DOCROOT>/drupal and moving everything down 1
+				 */
+				$this->file_create_directory($tmpdir);
+				$ret = $this->_exec('/tmp', $cmd . ' --drupal-project-rename --destination=%(tempdir)s -q', $args);
 
-			$this->file_purge();
-			$ret = $this->file_rename($tmpdir . '/drupal', $docroot);
-			$this->file_delete($tmpdir, true);
-			if (!$ret) {
-				return error("failed to move Drupal install to `%s'", $docroot);
+				if (!$ret['success']) {
+					return error('failed to download Drupal - out of space? Error: `%s\'',
+						coalesce($ret['stderr'], $ret['stdout'])
+					);
+				}
+
+				if ($this->file_exists($docroot)) {
+					$this->file_delete($docroot, true);
+				}
+
+				$this->file_purge();
+				$ret = $this->file_rename($tmpdir . '/drupal', $docroot);
+				$this->file_delete($tmpdir, true);
+				if (!$ret) {
+					return error("failed to move Drupal install to `%s'", $docroot);
+				}
 			}
 
 			if (isset($opts['site-email']) && !preg_match(Regex::EMAIL, $opts['site-email'])) {
@@ -202,7 +238,8 @@
 				'xtraopts'     => implode(' ', $xtra)
 			);
 
-			$ret = $this->_exec($docroot,
+			$approot = $this->getAppRoot($hostname, $path);
+			$ret = $this->_exec($approot,
 				'site-install %(profile)s -q --db-url=%(dburi)s --account-name=%(account-name)s ' .
 				'--account-pass=%(account-pass)s --account-mail=%(account-mail)s ' .
 				'--site-mail=%(site-mail)s --site-name=%(title)s %(xtraopts)s', $args);
@@ -212,7 +249,7 @@
 				$this->file_delete($docroot, true);
 				$db->rollback();
 
-				return error('failed to install Drupal: %s', $ret['stderr']);
+				return error('failed to install Drupal: %s', coalesce($ret['stderr'], $ret['stdout']));
 			}
 			// by default, let's only open up ACLs to the bare minimum
 			$this->file_touch($docroot . '/.htaccess');
@@ -221,7 +258,6 @@
 			$this->initializeMeta($docroot, $opts);
 
 			$this->fortify($hostname, $path, 'max');
-			$fqdn = $this->web_normalize_hostname($hostname);
 			/**
 			 * Make sure RewriteBase is present, move to Webapps?
 			 */
@@ -239,32 +275,76 @@
 				['app' => static::APP_NAME, 'email' => $opts['email']]);
 		}
 
+		/**
+		 * @inheritDoc
+		 */
+		protected function mapFilesFromList(array $files, string $approot): array
+		{
+			// remap for Drupal 9.x installed via Composer
+			if ($this->file_exists("$approot/web/sites")) {
+				$approot .= "/web";
+			}
+			return parent::mapFilesFromList($files, $approot);
+		}
+
+
+		/**
+		 *
+		 * @param string $hostname
+		 * @param string $path
+		 * @return string|null
+		 */
+		protected function getAppRoot(string $hostname, string $path = ''): ?string
+		{
+			// hackish, if created as a Composer project
+			$docroot = $this->web_normalize_path($hostname, $path);
+			$parent = dirname($docroot);
+			if ($this->file_exists("{$parent}/web/index.php")) {
+				return $parent;
+			}
+
+			return $docroot;
+		}
+
+
+		/**
+		 * Look for manifest presence in v3.5+
+		 *
+		 * @param string $path
+		 * @return string
+		 */
+		private function assertCliTypeFromInstall(string $path): string
+		{
+			return $this->file_exists($path . '/Composer/Composer.php') || $this->file_exists($path . '/vendor/drupal/core-composer-scaffold') ? '999.999.999' : '8.9999.99999';
+		}
+
+		private function cliFromVersion(string $version, string $poolVersion = null): string
+		{
+			$selections = [
+				dirname(self::DRUPAL_CLI) . '/drush-8.4.1.phar',
+				'vendor/bin/drush'
+			];
+			$choice = version_compare($version, '9.0.0', '<') ? 0 : 1;
+			if ($poolVersion && version_compare($poolVersion, '7.1.0', '<')) {
+				return $selections[0];
+			}
+
+			return $selections[$choice];
+		}
+
 		private function _exec(?string $path, $cmd, array $args = array())
 		{
-			// client may override tz, propagate to bin
-			$tz = date_default_timezone_get();
-			$debug = is_debug() ? ' -v' : '';
-			$cli = 'php -d pdo_mysql.default_socket=' . escapeshellarg(ini_get('mysqli.default_socket')) .
-				' -d date.timezone=' . $tz . ' -d memory_limit=192m ' . self::DRUPAL_CLI . $debug . ' -y';
-			if (!is_array($args)) {
-				$args = func_get_args();
-				array_shift($args);
-			}
-			$user = $this->username;
-			if ($path) {
-				$user = parent::getDocrootUser($path);
-				$cli = 'cd %(path)s && ' . $cli;
-				$args['path'] = $path;
-			}
-			$cmd = $cli . ' ' . $cmd;
-			$ret = $this->pman_run($cmd, $args, null, ['user' => $user]);
+			$wrapper = PhpWrapper::instantiateContexted($this->getAuthContext());
+			$drush = $this->cliFromVersion($args['version'] ?? $this->assertCliTypeFromInstall($path),
+				$this->php_pool_version_from_path((string)$path));
+			$ret = $wrapper->exec($path, $drush . ' ' . $cmd, $args);
+
 			if (0 === strncmp((string)coalesce($ret['stderr'], $ret['stdout']), 'Error:', 6)) {
 				// move stdout to stderr on error for consistency
 				$ret['success'] = false;
 				if (!$ret['stderr']) {
 					$ret['stderr'] = $ret['stdout'];
 				}
-
 			}
 
 			return $ret;
@@ -307,7 +387,9 @@
 			}
 
 			return $this->file_exists($docroot . '/sites/default')
-				|| $this->file_exists($docroot . '/sites/all');
+				|| $this->file_exists($docroot . '/sites/all')
+				/* Drupal 9.0+ */
+				|| $this->file_exists($docroot . '/vendor/drupal/core-composer-scaffold');
 		}
 
 		/**
@@ -324,7 +406,6 @@
 			}
 
 			$output = json_decode($ret['stdout'], true);
-
 			return $output['drupal-version'] ?? null;
 		}
 
@@ -710,13 +791,15 @@
 		 */
 		public function update(string $hostname, string $path = '', string $version = null): bool
 		{
-			$docroot = $this->getAppRoot($hostname, $path);
-			if (!$docroot) {
+			$approot = $this->getAppRoot($hostname, $path);
+			if (!$approot) {
 				return error('update failed');
 			}
-			if ($this->isLocked($docroot)) {
-				return error('Drupal is locked - remove lock file from `%s\' and try again', $docroot);
+			if ($this->isLocked($approot)) {
+				return error('Drupal is locked - remove lock file from `%s\' and try again', $approot);
 			}
+
+			$oldVersion = $this->get_version($hostname, $path);
 			if ($version) {
 				if (!is_scalar($version) || strcspn($version, '.0123456789x-')) {
 					return error('invalid version number, %s', $version);
@@ -726,40 +809,62 @@
 				$current = $this->_extractBranch($this->get_version($hostname, $path));
 				$version = Versioning::nextVersion(
 					$this->get_versions(),
-					$this->get_version($hostname, $path)
+					$oldVersion
 				);
 			}
 
+			if (version_compare($oldVersion, '9.0.0', '<') && version_compare($version, '9.0.0', '>=')) {
+				// moves to drush as Composer package
+				return error("No automatic upgrade path exists from pre-9.0 to 9.0+");
+			}
+
+
 			// save .htaccess
-			$htaccess = $docroot . DIRECTORY_SEPARATOR . '.htaccess';
+			$htaccess = $approot . DIRECTORY_SEPARATOR . '.htaccess';
 			if ($this->file_exists($htaccess) && !$this->file_move($htaccess, $htaccess . '.bak', true)) {
 				return error('upgrade failure: failed to save copy of original .htaccess');
 			}
 			$this->file_purge();
-			$cmd = 'pm-update drupal-%(version)s';
-			$args = array('version' => $version);
+			$this->_setMaintenance($approot, true, $current);
 
-			$this->_setMaintenance($docroot, true, $current);
-			$ret = $this->_exec($docroot, $cmd, $args);
+			if (version_compare($version, '9.0.0', '<')) {
+				$cmd = 'pm-update drupal-%(version)s';
+				$args = array('version' => $version);
+				$ret = $this->_exec($approot, $cmd, $args);
+				if ($ret['succeess']) {
+					$this->_exec($approot, 'cache-build');
+				}
+
+			} else {
+				$composer = ComposerWrapper::instantiateContexted($this->getAuthContextFromDocroot($approot));
+				$ret = $composer->exec($approot, "update 'drupal/core-*' -W --with='drupal/core-recommended:$version'");
+				if ($ret['success']) {
+					$ret = $this->_exec($approot, "updatedb");
+				}
+
+				if ($ret['success']) {
+					$this->_exec($approot, "cache:rebuild");
+				}
+			}
+
 			$this->file_purge();
-			$this->_setMaintenance($docroot, false, $current);
+			$this->_setMaintenance($approot, false, $current);
 
 			if ($this->file_exists($htaccess . '.bak') && !$this->file_move($htaccess . '.bak', $htaccess, true)
 				&& ($this->file_purge() || true)
 			) {
-				warn("failed to rename backup `%s/.htaccess.bak' to .htaccess", $docroot);
+				warn("failed to rename backup `%s/.htaccess.bak' to .htaccess", $approot);
 			}
 
-			parent::setInfo($docroot, [
+			parent::setInfo($approot, [
 				'version' => $this->get_version($hostname, $path) ?? $version,
 				'failed'  => !$ret['success']
 			]);
-			$this->fortify($hostname, $path, array_get($this->getOptions($docroot), 'fortify') ?: 'max');
+			$this->fortify($hostname, $path, array_get($this->getOptions($approot), 'fortify') ?: 'max');
 
 			if (!$ret['success']) {
 				return error('failed to update Drupal: %s', coalesce($ret['stderr'], $ret['stdout']));
 			}
-
 
 			return $ret['success'];
 		}
@@ -783,7 +888,8 @@
 			if (null === $version) {
 				$version = $this->_getVersion($docroot);
 			}
-			if ($version[0] >= 8) {
+			$version = explode('.', $version, 2);
+			if ((int)$version[0] >= 8) {
 				$maintenancecmd = 'sset system.maintenance_mode %(mode)d';
 				$cachecmd = 'cr';
 			} else {
@@ -814,6 +920,9 @@
 		public function update_plugins(string $hostname, string $path = '', array $plugins = array()): bool
 		{
 			$docroot = $this->getAppRoot($hostname, $path);
+			if (version_compare($this->get_version($hostname, $path), '9.0', '>=')) {
+				return debug("Individual plugin updates no longer supported");
+			}
 			if (!$docroot) {
 				return error('update failed');
 			}
@@ -852,20 +961,20 @@
 
 		public function _housekeeping()
 		{
-			if (!file_exists(self::DRUPAL_CLI) || filemtime(self::DRUPAL_CLI) < filemtime(__FILE__)) {
-				$url = self::DRUPAL_CLI_URL;
-				$res = Util_HTTP::download($url, self::DRUPAL_CLI);
-				if (!$res) {
-					return error('failed to install Drupal CLI');
-				}
-				info('downloaded Drupal CLI');
-				chmod(self::DRUPAL_CLI, 0755);
-			}
+			$versions = [
+				'drush-8.4.11.phar' => null
+			];
 
-			$local = $this->service_template_path('siteinfo') . '/' . self::DRUPAL_CLI;
-			if (!file_exists($local)) {
-				copy(self::DRUPAL_CLI, $local);
-				chmod($local, 755);
+			foreach ($versions as $full => $short) {
+				$src = resource_path('storehouse') . '/' . $full;
+				$dest =  \Opcenter\Php::PEAR_HOME. '/' . ($short ?? $full);
+				if (is_file($dest) && sha1_file($src) === sha1_file($dest)) {
+					continue;
+				}
+
+				copy($src, $dest);
+				chmod($dest, 0755);
+				info('Copied %(src)s to %(dest)s', ['src' => $full, 'dest' => $dest]);
 			}
 
 			return true;
