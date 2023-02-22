@@ -649,7 +649,7 @@
 		 */
 		public function db_config(string $hostname, string $path = '')
 		{
-			$docroot = $this->getAppRoot($hostname, $path);
+			$docroot = $this->getDocumentRoot($hostname, $path);
 			if (!$docroot) {
 				return error('failed to determine Drupal');
 			}
