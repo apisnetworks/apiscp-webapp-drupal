@@ -31,12 +31,16 @@
 
 		public function getAppRoot(): ?string
 		{
+			if (!$this->docroot) {
+				return $this->docroot;
+			}
+
 			// 9.0 may use a public dispatcher directory
 			$stat = $this->file_stat($this->docroot . '/../web');
 			if ($stat && $stat['file_type'] === 'dir') {
 				// @todo convert to lookup with other webapps?
-				$docroot = $this->file_stat($this->docroot);
-				return dirname($docroot['referent'] ?: $docroot);
+				$stat = $this->file_stat($this->docroot);
+				return dirname($stat['referent'] ?: $this->docroot);
 			}
 
 			return $this->docroot;
