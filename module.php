@@ -818,9 +818,9 @@
 				return error("No automatic upgrade path exists from pre-9.0 to 9.0+");
 			}
 
-
+			$docroot = $this->getDocumentRoot($hostname, $path);
 			// save .htaccess
-			$htaccess = $approot . DIRECTORY_SEPARATOR . '.htaccess';
+			$htaccess = $docroot . DIRECTORY_SEPARATOR . '.htaccess';
 			if ($this->file_exists($htaccess) && !$this->file_move($htaccess, $htaccess . '.bak', true)) {
 				return error('upgrade failure: failed to save copy of original .htaccess');
 			}
