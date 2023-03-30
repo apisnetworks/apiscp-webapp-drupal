@@ -263,7 +263,7 @@
 			 */
 			$this->fixRewriteBase($docroot, $path);
 
-			$this->_postInstallTrustedHost($dist, $hostname, $docroot);
+			$this->_postInstallTrustedHost($opts['version'], $hostname, $docroot);
 
 			if (!empty($opts['ssl'])) {
 				// @todo force redirect to HTTPS
@@ -419,7 +419,7 @@
 		 */
 		private function _postInstallTrustedHost($version, $hostname, $docroot): bool
 		{
-			if (version_compare((string)$version, '8.0', '<')) {
+			if (\Opcenter\Versioning::compare((string)$version, '8.0', '<')) {
 				return true;
 			}
 			$file = $docroot . '/sites/default/settings.php';
@@ -434,7 +434,7 @@
 				"\t" . "'^(www\.)?' . " . 'str_replace(".", "\\\\.", $_SERVER["DOMAIN"]) . ' . "'$'" . "\n" .
 				');' . "\n";
 
-			return $this->file_put_file_contents($file, $content, true, true);
+			return $this->file_put_file_contents($file, $content);
 		}
 
 		/**
