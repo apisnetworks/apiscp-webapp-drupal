@@ -241,7 +241,7 @@
 			$approot = $this->getAppRoot($hostname, $path);
 			$ret = $this->_exec($approot,
 				'site-install %(profile)s -q --db-url=%(dburi)s --account-name=%(account-name)s ' .
-				'--account-pass=%(account-pass)s --account-mail=%(account-mail)s ' .
+				'--account-pass=%(account-pass)s -y --account-mail=%(account-mail)s ' .
 				'--site-mail=%(site-mail)s --site-name=%(title)s %(xtraopts)s', $args);
 
 			if (!$ret['success']) {
@@ -321,7 +321,7 @@
 		private function cliFromVersion(string $version, string $poolVersion = null): string
 		{
 			$selections = [
-				dirname(self::DRUPAL_CLI) . '/drush-8.4.1.phar',
+				dirname(self::DRUPAL_CLI) . '/drush-8.4.11.phar',
 				'vendor/bin/drush'
 			];
 			$choice = version_compare($version, '9.0.0', '<') ? 0 : 1;
@@ -828,10 +828,10 @@
 			$this->_setMaintenance($approot, true, $current);
 
 			if (version_compare($version, '9.0.0', '<')) {
-				$cmd = 'pm-update drupal-%(version)s';
+				$cmd = 'pm-update drupal-%(version)s -y';
 				$args = array('version' => $version);
 				$ret = $this->_exec($approot, $cmd, $args);
-				if ($ret['succeess']) {
+				if ($ret['success']) {
 					$this->_exec($approot, 'cache-build');
 				}
 
@@ -926,7 +926,7 @@
 			if (!$docroot) {
 				return error('update failed');
 			}
-			$cmd = 'pm-update --check-disabled --no-core';
+			$cmd = 'pm-update -y --check-disabled --no-core';
 
 			$args = array();
 			if ($plugins) {
