@@ -287,23 +287,16 @@
 			return parent::mapFilesFromList($files, $approot);
 		}
 
-
 		/**
-		 *
+		 * App root relocated in Drupal 9.x
 		 * @param string $hostname
 		 * @param string $path
-		 * @return string|null
+		 * @return int
 		 */
-		protected function getAppRoot(string $hostname, string $path = ''): ?string
+		protected function getAppRootDepth(string $hostname, string $path = ''): int
 		{
-			// hackish, if created as a Composer project
-			$docroot = $this->web_normalize_path($hostname, $path);
-			$parent = dirname($docroot);
-			if ($this->file_exists("{$parent}/web/index.php")) {
-				return $parent;
-			}
-
-			return $docroot;
+			$approot = dirname($this->web_normalize_path($hostname, $path));
+			return $this->file_exists("$approot/web/index.php") ? 1 : 0;
 		}
 
 
