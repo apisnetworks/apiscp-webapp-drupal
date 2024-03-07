@@ -72,14 +72,12 @@
 				return error('%(what)s must be enabled to install %(app)s',
 					['what' => 'MySQL', 'app' => static::APP_NAME]);
 			}
-			$docroot = $this->getDocumentRoot($hostname, $path);
-			if (!$docroot) {
-				return error('failed to install Drupal');
-			}
 
 			if (!$this->parseInstallOptions($opts, $hostname, $path)) {
 				return false;
 			}
+
+			$docroot = $this->getDocumentRoot($hostname, $path);
 
 			// can't fetch translation file from ftp??
 			// don't worry about it for now
