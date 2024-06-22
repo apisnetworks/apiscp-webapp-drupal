@@ -683,7 +683,7 @@
 				return (array)$ver;
 			}
 			// 8.7.11+
-			$versions = (new Github)->setMode('tags')->fetch('drupal/drupal');
+			$versions = (new Github)->setMode('tags')->fetch('drupal/drupal', fn($v) => str_contains($v['version'], '-') ? false : null);
 			$cache->set($key, $versions, 43200);
 
 			return $versions;
