@@ -253,9 +253,6 @@
 			$this->file_touch($docroot . '/.htaccess');
 			$this->removeInvalidDirectives($docroot, 'sites/default/files/');
 
-			$this->initializeMeta($docroot, $opts);
-
-			$this->fortify($hostname, $path, 'max');
 			/**
 			 * Make sure RewriteBase is present, move to Webapps?
 			 */
