@@ -29,6 +29,7 @@
 			getAppRoot as getAppRootReal;
 		}
 
+		const RELOCATED_DOCROOT_NAME = 'web';
 		const APP_NAME = 'Drupal';
 
 		// primary domain document root
@@ -68,6 +69,7 @@
 			if (isset($opts['version']) && version_compare((string)$opts['version'], '7.33', '<')) {
 				return error("Minimum %(app)s version is %(version)s", ['app' => self::APP_NAME, 'version' => '7.33']);
 			}
+
 			if (!$this->mysql_enabled()) {
 				return error('%(what)s must be enabled to install %(app)s',
 					['what' => 'MySQL', 'app' => static::APP_NAME]);
@@ -121,10 +123,10 @@
 				}
 				if (null === ($docroot = $this->remapPublic($hostname, $path, 'web'))) {
 					// it's more reasonable to fail at this stage, but let's try to complete
-					return error("Failed to remap %(app)s to %(subdir)/, manually remap from `%(docroot)s' - %(app)s setup is incomplete!", [
+					return error(\Module\Support\Webapps\Messages::ERR_PATH_REMAP_FAILED, [
 						'app' => static::APP_NAME,
-						'subdir' => 'web',
-						'docroot' => $this->getDocumentRoot($hostname, $path),
+						'public' => 'web',
+						'path' => $this->getDocumentRoot($hostname, $path),
 					]);
 				}
 			} else {
