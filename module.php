@@ -312,11 +312,17 @@
 		{
 			$selections = [
 				dirname(self::DRUPAL_CLI) . '/drush-8.4.11.phar',
-				'vendor/bin/drush'
+				'vendor/bin/drush',
+				'vendor/drush/drush/drush.php'
 			];
 			$choice = version_compare($version, '9.0.0', '<') ? 0 : 1;
+			// drush commit c3a70a1 moves this to shell wrapper
 			if ($poolVersion && version_compare($poolVersion, '7.1.0', '<')) {
 				return $selections[0];
+			}
+
+			if ($choice && version_compare($version, '10.3', '>=')) {
+				$choice = 2;
 			}
 
 			return $selections[$choice];
@@ -412,7 +418,7 @@
 			if (\Opcenter\Versioning::compare((string)$version, '8.0', '<')) {
 				return true;
 			}
-			$file = $docroot . '/sites/default/settings.php';
+			$file = "{$docroot}/sites/default/settings.php";
 			$content = $this->file_get_file_contents($file);
 			if (!$content) {
 				return error('unable to add trusted_host_patterns configuration - cannot get ' .
@@ -643,6 +649,7 @@
 			if (!$docroot) {
 				return error('failed to determine Drupal');
 			}
+
 			$code = 'include("./sites/default/settings.php"); $conf = $databases["default"]["default"]; print serialize(array("user" => $conf["username"], "password" => $conf["password"], "db" => $conf["database"], "prefix" => $conf["prefix"], "host" => $conf["host"]));';
 			$cmd = 'cd %(path)s && php -r %(code)s';
 			$ret = $this->pman_run($cmd, array('path' => $docroot, 'code' => $code));
@@ -859,7 +866,7 @@
 			return $ret['success'];
 		}
 
-		public function isLocked(string $docroot): bool
+		private function isLocked(string $docroot): bool
 		{
 			return file_exists($this->domain_fs_path() . $docroot . DIRECTORY_SEPARATOR .
 				'.drush-lock-update');
